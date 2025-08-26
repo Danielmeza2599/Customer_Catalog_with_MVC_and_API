@@ -1,24 +1,38 @@
 // server.js
-// API RESTful para manejar el catálogo de clientes con SQL Server
+// API RESTful para manejar el catálogo de clientes con SQL Server usando ODBC
 // Autor: Daniel Meza
 // Fecha: 25/08/2025
 
-// backend/server.js
-// server.js - VERSIÓN CORREGIDA
+// server.js
 const express = require('express');
-const odbc = require('odbc'); // Usando odbc en lugar de mssql
+const odbc = require('odbc'); // Asegurarse de tener instalado el paquete odbc
 const bodyParser = require('body-parser');
+const path = require('path');
+
 const app = express();
-const port = 8001;  // Puerto del servidor
+const port = 3000; // Puerto donde correrá el servidor
 
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Configuración de conexión ODBC
+// ====================
+// SERVIR FRONTEND
+// ====================
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
+});
+
+// ====================
+// RUTAS DE LA API
+// ====================
+
+// Cadena de conexión ODBC
 const connectionString = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=MEZADESKTOP\\SQLEXPRESS;DATABASE=ClientesDB;UID=sa;PWD=mezasql;TrustServerCertificate=yes;';
 
-// Obtener todos los clientes con sus direcciones
+// Obtener todos los clientes
 app.get('/api/clientes', async (req, res) => {
     try {
         const connection = await odbc.connect(connectionString);
@@ -31,8 +45,7 @@ app.get('/api/clientes', async (req, res) => {
                  FOR JSON PATH) as Direcciones
             FROM Clientes c
         `);
-        
-        // Convertir direcciones de JSON string a objeto
+
         const clientes = result.map(row => ({
             ID: row.ID,
             Nombre: row.Nombre,
@@ -41,7 +54,7 @@ app.get('/api/clientes', async (req, res) => {
             Email: row.Email,
             Direcciones: row.Direcciones ? JSON.parse(row.Direcciones) : []
         }));
-        
+
         res.json(clientes);
         await connection.close();
     } catch (err) {
@@ -64,16 +77,16 @@ app.get('/api/clientes/:id', async (req, res) => {
             FROM Clientes c
             WHERE c.ID = ${req.params.id}
         `);
-        
+
         if (result.length === 0) {
             return res.status(404).json({ error: 'Cliente no encontrado' });
         }
-        
+
         const cliente = {
             ...result[0],
             Direcciones: result[0].Direcciones ? JSON.parse(result[0].Direcciones) : []
         };
-        
+
         res.json(cliente);
         await connection.close();
     } catch (err) {
@@ -82,23 +95,21 @@ app.get('/api/clientes/:id', async (req, res) => {
     }
 });
 
-// Crear un nuevo cliente con direcciones
+// Crear cliente
 app.post('/api/clientes', async (req, res) => {
     const { nombre, telefono, numeroCliente, email, direcciones } = req.body;
-    
+
     try {
         const connection = await odbc.connect(connectionString);
-        
-        // Insertar cliente
+
         const clienteResult = await connection.query(`
             INSERT INTO Clientes (Nombre, Telefono, NumeroCliente, Email)
             OUTPUT INSERTED.ID
             VALUES ('${nombre}', '${telefono || ''}', '${numeroCliente}', '${email || ''}')
         `);
-        
+
         const clienteId = clienteResult[0].ID;
-        
-        // Insertar direcciones si existen
+
         if (direcciones && direcciones.length > 0) {
             for (const dir of direcciones) {
                 await connection.query(`
@@ -107,7 +118,7 @@ app.post('/api/clientes', async (req, res) => {
                 `);
             }
         }
-        
+
         res.status(201).json({ message: 'Cliente creado', id: clienteId });
         await connection.close();
     } catch (err) {
@@ -116,15 +127,14 @@ app.post('/api/clientes', async (req, res) => {
     }
 });
 
-// Actualizar un cliente existente
+// Actualizar cliente
 app.put('/api/clientes/:id', async (req, res) => {
     const { nombre, telefono, numeroCliente, email, direcciones } = req.body;
     const id = req.params.id;
-    
+
     try {
         const connection = await odbc.connect(connectionString);
-        
-        // Actualizar cliente
+
         await connection.query(`
             UPDATE Clientes 
             SET Nombre = '${nombre}', 
@@ -133,11 +143,9 @@ app.put('/api/clientes/:id', async (req, res) => {
                 Email = '${email || ''}'
             WHERE ID = ${id}
         `);
-        
-        // Eliminar direcciones existentes
+
         await connection.query(`DELETE FROM Direcciones WHERE ClienteID = ${id}`);
-        
-        // Insertar nuevas direcciones
+
         if (direcciones && direcciones.length > 0) {
             for (const dir of direcciones) {
                 await connection.query(`
@@ -146,7 +154,7 @@ app.put('/api/clientes/:id', async (req, res) => {
                 `);
             }
         }
-        
+
         res.json({ message: 'Cliente actualizado' });
         await connection.close();
     } catch (err) {
@@ -155,7 +163,7 @@ app.put('/api/clientes/:id', async (req, res) => {
     }
 });
 
-// Eliminar un cliente
+// Eliminar cliente
 app.delete('/api/clientes/:id', async (req, res) => {
     try {
         const connection = await odbc.connect(connectionString);
@@ -168,111 +176,9 @@ app.delete('/api/clientes/:id', async (req, res) => {
     }
 });
 
-// Iniciar servidor
+// ====================
+// LEVANTAR SERVIDOR
+// ====================
 app.listen(port, () => {
     console.log(`Servidor ejecutándose en http://localhost:${port}`);
-    console.log('✅ Conexión a SQL Server configurada correctamente');
-});
-
-
-
-// Obtener un cliente por ID
-app.get('/api/clientes/:id', async (req, res) => {
-    try {
-        const result = await pool.request()
-            .input('id', sql.Int, req.params.id)
-            .execute('ObtenerClientePorID');
-        
-        if (result.recordset.length === 0) {
-            return res.status(404).json({ error: 'Cliente no encontrado' });
-        }
-        
-        res.json(result.recordset[0]);
-    } catch (err) {
-        console.error('Error al obtener cliente:', err);
-        res.status(500).json({ error: 'Error al obtener cliente' });
-    }
-});
-
-// Crear un nuevo cliente con direcciones
-app.post('/api/clientes', async (req, res) => {
-    const { nombre, telefono, numeroCliente, email, direcciones } = req.body;
-    
-    try {
-        const request = pool.request();
-        request.input('nombre', sql.NVarChar, nombre);
-        request.input('telefono', sql.NVarChar, telefono || '');
-        request.input('numeroCliente', sql.NVarChar, numeroCliente);
-        request.input('email', sql.NVarChar, email || '');
-        
-        // Convertir direcciones a XML para pasarlas al stored procedure
-        let direccionesXML = '<Direcciones>';
-        if (direcciones && direcciones.length > 0) {
-            direcciones.forEach(dir => {
-                direccionesXML += `<Direccion><Calle>${dir.calle}</Calle><Colonia>${dir.colonia}</Colonia></Direccion>`;
-            });
-        }
-        direccionesXML += '</Direcciones>';
-        
-        request.input('direcciones', sql.Xml, direccionesXML);
-        
-        const result = await request.execute('CrearClienteConDirecciones');
-        res.status(201).json({ message: 'Cliente creado', id: result.recordset[0].NuevoClienteID });
-    } catch (err) {
-        console.error('Error al crear cliente:', err);
-        res.status(500).json({ error: 'Error al crear cliente' });
-    }
-});
-
-// Actualizar un cliente existente
-app.put('/api/clientes/:id', async (req, res) => {
-    const { nombre, telefono, numeroCliente, email, direcciones } = req.body;
-    const id = req.params.id;
-    
-    try {
-        const request = pool.request();
-        request.input('id', sql.Int, id);
-        request.input('nombre', sql.NVarChar, nombre);
-        request.input('telefono', sql.NVarChar, telefono || '');
-        request.input('numeroCliente', sql.NVarChar, numeroCliente);
-        request.input('email', sql.NVarChar, email || '');
-        
-        // Convertir direcciones a XML
-        let direccionesXML = '<Direcciones>';
-        if (direcciones && direcciones.length > 0) {
-            direcciones.forEach(dir => {
-                const dirId = dir.id || 0;
-                direccionesXML += `<Direccion><ID>${dirId}</ID><Calle>${dir.calle}</Calle><Colonia>${dir.colonia}</Colonia></Direccion>`;
-            });
-        }
-        direccionesXML += '</Direcciones>';
-        
-        request.input('direcciones', sql.Xml, direccionesXML);
-        
-        await request.execute('ActualizarClienteConDirecciones');
-        res.json({ message: 'Cliente actualizado' });
-    } catch (err) {
-        console.error('Error al actualizar cliente:', err);
-        res.status(500).json({ error: 'Error al actualizar cliente' });
-    }
-});
-
-// Eliminar un cliente
-app.delete('/api/clientes/:id', async (req, res) => {
-    try {
-        await pool.request()
-            .input('id', sql.Int, req.params.id)
-            .execute('EliminarCliente');
-        
-        res.json({ message: 'Cliente eliminado' });
-    } catch (err) {
-        console.error('Error al eliminar cliente:', err);
-        res.status(500).json({ error: 'Error al eliminar cliente' });
-    }
-});
-
-// Iniciar servidor
-app.listen(port, () => {
-    console.log(`Servidor ejecutándose en http://localhost:${port}`);
-    console.log('✅ Conexión a SQL Server configurada correctamente'); //Mostrar mensaje de éxito en consola
 });
