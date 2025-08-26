@@ -4,7 +4,7 @@
 // Fecha: 25/08/2025
 
 // URL base de la API
-const API_URL = 'http://localhost:5500/api'; // Adaptar si la API está en otra URL
+const API_URL = 'http://localhost:3000/api'; // Adaptar si la API está en otra URL
 
 document.addEventListener('DOMContentLoaded', function() {
     cargarClientes();
