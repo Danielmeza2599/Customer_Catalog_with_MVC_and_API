@@ -3,7 +3,7 @@
 // Autor: Daniel Meza
 // Fecha: 25/08/2025
 
-// script.js - VERSIÓN COMPLETA Y CORREGIDA
+// script.js - V2.0 - VERSIÓN CORREGIDA
 const API_URL = 'http://localhost:3000/api';
 
 // Event listener principal
@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Inicializar modal
+// Inicializar modal - Mostrar formularios sin navegar a otra página
 const clienteModal = document.getElementById('clienteModal');
 clienteModal.addEventListener('hidden.bs.modal', function() {
     document.getElementById('clienteForm').reset();
