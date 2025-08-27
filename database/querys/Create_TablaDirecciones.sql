@@ -1,0 +1,8 @@
+-- Tabla de Direcciones
+CREATE TABLE Direcciones (
+    ID INT IDENTITY(1,1) PRIMARY KEY,
+    ClienteID INT NOT NULL,
+    Calle NVARCHAR(200) NOT NULL,
+    Colonia NVARCHAR(100) NOT NULL,
+    FOREIGN KEY (ClienteID) REFERENCES Clientes(ID) ON DELETE CASCADE
+);
