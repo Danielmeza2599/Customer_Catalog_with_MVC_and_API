@@ -3,7 +3,7 @@
 // Autor: Daniel Meza
 // Fecha: 25/08/2025
 
-// server.js - VERSIÓN CORREGIDA
+// server.js - VERSIÓN V2.0
 const express = require('express');
 const odbc = require('odbc');
 const bodyParser = require('body-parser');
@@ -25,11 +25,11 @@ app.use((req, res, next) => {
 });
 
 // Servir archivos estáticos del frontend
-app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.static(path.join(__dirname, '../docs')));
 
 // Ruta principal
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/index.html'));
+    res.sendFile(path.join(__dirname, '../docs/index.html'));
 });
 
 // Cadena de conexión ODBC
