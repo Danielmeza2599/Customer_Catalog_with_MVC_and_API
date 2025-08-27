@@ -270,7 +270,7 @@ async function editarCliente(id) {
 
 // Función para eliminar cliente
 async function eliminarCliente(id) {
-    if (!confirm('¿Estás seguro de que deseas eliminar este cliente?')) {
+    if (!confirm('¿Estás seguro de que deseas eliminar este cliente?')) { //Solcitar confirmacion de eliminacion
         return;
     }
     
