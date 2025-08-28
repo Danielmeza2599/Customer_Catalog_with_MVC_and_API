@@ -1,5 +1,5 @@
 // test_direct.js
-// test_odbc.js - ¡ESTE DEBERÍA FUNCIONAR!
+// test_odbc.js - 
 const odbc = require('odbc');
 
 async function testConnection() {

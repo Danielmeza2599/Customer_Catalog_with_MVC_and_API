@@ -4,7 +4,7 @@ import sys
 
 def test_connection():
     # Configuración de la conexión
-    server = 'MEZADESKTOP\SQLEXPRESS'  # Ej: 'localhost', '192.168.1.100', 'nombre_instancia'
+    server = 'MEZADESKTOP\SQLEXPRESS'  # , 'nombre_instancia'
     database = 'ClientesDB'
     username = 'sa'
     password = 'mezasql'

@@ -3,7 +3,8 @@
 // Autor: Daniel Meza
 // Fecha: 25/08/2025
 
-// server.js - VERSIÓN V2.1 CON STORED PROCEDURES
+// server.js - V2.1 -  VERSIÓN ADAPTADA PARA LOS STORED PROCEDURES ESPECÍFICOS
+// VERSIÓN CORREGIDA
 const express = require('express');
 const odbc = require('odbc');
 const bodyParser = require('body-parser');
@@ -35,41 +36,70 @@ app.get('/', (req, res) => {
 // Cadena de conexión ODBC
 const connectionString = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=MEZADESKTOP\\SQLEXPRESS;DATABASE=ClientesDB;UID=sa;PWD=mezasql;TrustServerCertificate=yes;';
 
-// 
- // API Clientes
-//
-// Obtener todos los clientes usando Stored Procedure
+// Función auxiliar para convertir direcciones a XML
+function direccionesToXML(direcciones) {
+    if (!direcciones || direcciones.length === 0) {
+        return null;
+    }
+    
+    let xml = '<Direcciones>';
+    direcciones.forEach(dir => {
+        xml += `<Direccion><Calle>${escapeXML(dir.calle)}</Calle><Colonia>${escapeXML(dir.colonia)}</Colonia></Direccion>`;
+    });
+    xml += '</Direcciones>';
+    
+    return xml;
+}
+
+// Función para escapar caracteres especiales en XML
+function escapeXML(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&apos;');
+}
+
+// Obtener todos los clientes - SP incluido
 app.get('/api/clientes', async (req, res) => {
     let connection;
     try {
         connection = await odbc.connect(connectionString);
-        const result = await connection.query(`EXEC ObtenerClientesConDirecciones`);
+        const result = await connection.query(`EXEC ObtenerClientesConDirecciones`); // Ejecutar el stored procedure
         
-        // Parsear correctamente las direcciones
-        const clientes = result.map(row => {
-            let direcciones = [];
-            try {
-                if (row.Direcciones) {
-                    direcciones = JSON.parse(row.Direcciones);
-                    if (!Array.isArray(direcciones)) {
-                        direcciones = [direcciones];
-                    }
+        console.log('Resultado raw de ObtenerClientesConDirecciones:', result);// ayuda a ver qué está devolviendo SQL Server
+        
+        if (result.length === 0) {
+            return res.json([]);
+        }
+        
+        // El stored procedure devuelve JSON en la primera columna
+        let clientes;
+        try {
+            // Buscar la columna que contiene el JSON
+            const jsonColumn = Object.keys(result[0]).find(key => 
+                typeof result[0][key] === 'string' && 
+                result[0][key].trim().startsWith('[')
+            );
+            
+            if (jsonColumn) {
+                clientes = JSON.parse(result[0][jsonColumn]);
+            } else {
+                // Si no encontramos una columna JSON, intentar parsear el primer campo
+                const firstValue = Object.values(result[0])[0];
+                if (typeof firstValue === 'string') {
+                    clientes = JSON.parse(firstValue);
+                } else {
+                    throw new Error('No se pudo encontrar el JSON en la respuesta');
                 }
-            } catch (e) {
-                console.error('Error parseando direcciones:', e);
-                direcciones = [];
             }
-
-            return {
-                ID: row.ID,
-                Nombre: row.Nombre,
-                Telefono: row.Telefono,
-                NumeroCliente: row.NumeroCliente,
-                Email: row.Email,
-                Direcciones: direcciones
-            };
-        });
-
+        } catch (e) {
+            console.error('Error parseando JSON de clientes:', e);
+            console.error('Contenido recibido:', result[0]);
+            return res.status(500).json({ error: 'Error procesando datos de clientes' });
+        }
+        
         res.json(clientes);
     } catch (err) {
         console.error('Error al obtener clientes:', err);
@@ -85,10 +115,7 @@ app.get('/api/clientes', async (req, res) => {
     }
 });
 
-//
-// API Clientes por ID
-//
-// Obtener un cliente por ID usando Stored Procedure
+// Obtener un cliente por ID - SP incluido
 app.get('/api/clientes/:id', async (req, res) => {
     let connection;
     try {
@@ -98,35 +125,40 @@ app.get('/api/clientes/:id', async (req, res) => {
         }
 
         connection = await odbc.connect(connectionString);
-        const result = await connection.query(`EXEC ObtenerClientePorID @ID = ${id}`);
-
+        const result = await connection.query(`EXEC ObtenerClientePorID @id = ${id}`);// Ejecutar el stored procedure
+        
+        console.log('Resultado raw de ObtenerClientePorID:', result); // ayuda a ver qué está devolviendo SQL Server
+        
         if (result.length === 0) {
             return res.status(404).json({ error: 'Cliente no encontrado' });
         }
-
-        // Parsear correctamente las direcciones
-        let direcciones = [];
+        
+        // El stored procedure devuelve JSON en la primera columna
+        let cliente;
         try {
-            if (result[0].Direcciones) {
-                direcciones = JSON.parse(result[0].Direcciones);
-                if (!Array.isArray(direcciones)) {
-                    direcciones = [direcciones];
+            // Buscar la columna que contiene el JSON
+            const jsonColumn = Object.keys(result[0]).find(key => 
+                typeof result[0][key] === 'string' && 
+                (result[0][key].trim().startsWith('[') || result[0][key].trim().startsWith('{'))
+            );
+            
+            if (jsonColumn) {
+                cliente = JSON.parse(result[0][jsonColumn]);
+            } else {
+                // Si no encontramos una columna JSON, intentar parsear el primer campo
+                const firstValue = Object.values(result[0])[0];
+                if (typeof firstValue === 'string') {
+                    cliente = JSON.parse(firstValue);
+                } else {
+                    throw new Error('No se pudo encontrar el JSON en la respuesta');
                 }
             }
         } catch (e) {
-            console.error('Error parseando direcciones:', e);
-            direcciones = [];
+            console.error('Error parseando JSON del cliente:', e);
+            console.error('Contenido recibido:', result[0]);
+            return res.status(500).json({ error: 'Error procesando datos del cliente' });
         }
-
-        const cliente = {
-            ID: result[0].ID,
-            Nombre: result[0].Nombre,
-            Telefono: result[0].Telefono,
-            NumeroCliente: result[0].NumeroCliente,
-            Email: result[0].Email,
-            Direcciones: direcciones
-        };
-
+        
         res.json(cliente);
     } catch (err) {
         console.error('Error al obtener cliente:', err);
@@ -142,10 +174,7 @@ app.get('/api/clientes/:id', async (req, res) => {
     }
 });
 
-//
-// API Crear, Actualizar y Eliminar Clientes
-//
-// Crear cliente usando Stored Procedures
+// Crear cliente
 app.post('/api/clientes', async (req, res) => {
     let connection;
     try {
@@ -156,37 +185,25 @@ app.post('/api/clientes', async (req, res) => {
             return res.status(400).json({ error: 'Nombre y Número de Cliente son obligatorios' });
         }
 
+        // Convertir direcciones a XML
+        const direccionesXML = direccionesToXML(direcciones);
+        
         connection = await odbc.connect(connectionString);
+        
+        // Construir la consulta con parámetros
+        let query = `
+            EXEC CrearClienteConDirecciones 
+                @nombre = '${nombre.replace(/'/g, "''")}',
+                @telefono = '${(telefono || '').replace(/'/g, "''")}',
+                @numeroCliente = '${numeroCliente.replace(/'/g, "''")}',
+                @email = '${(email || '').replace(/'/g, "''")}',
+                @direcciones = ${direccionesXML ? `'${direccionesXML.replace(/'/g, "''")}'` : 'NULL'}
+        `;
+        
+        const result = await connection.query(query);
+        const nuevoClienteID = result[0].NuevoClienteID;
 
-        // Insertar cliente usando Stored Procedure
-        const clienteResult = await connection.query(`
-            DECLARE @NewID INT;
-            EXEC CrearClienteConDirecciones
-                @Nombre = '${nombre.replace(/'/g, "''")}', 
-                @Telefono = '${telefono || ''}', 
-                @NumeroCliente = '${numeroCliente.replace(/'/g, "''")}', 
-                @Email = '${email || ''}', 
-                @NewID = @NewID OUTPUT;
-            SELECT @NewID as ID;
-        `);
-
-        const clienteId = clienteResult[0].ID;
-
-        // Insertar direcciones usando Stored Procedure
-        if (direcciones && direcciones.length > 0) {
-            for (const dir of direcciones) {
-                if (dir.calle && dir.colonia) {
-                    await connection.query(`
-                        EXEC sp_InsertDireccion 
-                            @ClienteID = ${clienteId}, 
-                            @Calle = '${dir.calle.replace(/'/g, "''")}', 
-                            @Colonia = '${dir.colonia.replace(/'/g, "''")}'
-                    `);
-                }
-            }
-        }
-
-        res.status(201).json({ message: 'Cliente creado', id: clienteId });
+        res.status(201).json({ message: 'Cliente creado', id: nuevoClienteID });
     } catch (err) {
         console.error('Error al crear cliente:', err);
         res.status(500).json({ error: 'Error al crear cliente: ' + err.message });
@@ -201,9 +218,7 @@ app.post('/api/clientes', async (req, res) => {
     }
 });
 
-
-
-// Actualizar cliente usando Stored Procedures
+// Actualizar cliente
 app.put('/api/clientes/:id', async (req, res) => {
     let connection;
     try {
@@ -218,34 +233,23 @@ app.put('/api/clientes/:id', async (req, res) => {
             return res.status(400).json({ error: 'Nombre y Número de Cliente son obligatorios' });
         }
 
+        // Convertir direcciones a XML
+        const direccionesXML = direccionesToXML(direcciones);
+        
         connection = await odbc.connect(connectionString);
-
-        // Actualizar cliente usando Stored Procedure
-        await connection.query(`
-            EXEC ActualizarClienteConDirecciones
-                @ID = ${id},
-                @Nombre = '${nombre.replace(/'/g, "''")}',
-                @Telefono = '${telefono || ''}',
-                @NumeroCliente = '${numeroCliente.replace(/'/g, "''")}',
-                @Email = '${email || ''}'
-        `);
-
-        // Eliminar direcciones existentes
-        await connection.query(`DELETE FROM Direcciones WHERE ClienteID = ${id}`);
-
-        // Insertar nuevas direcciones
-        if (direcciones && direcciones.length > 0) {
-            for (const dir of direcciones) {
-                if (dir.calle && dir.colonia) {
-                    await connection.query(`
-                        EXEC sp_InsertDireccion 
-                            @ClienteID = ${id}, 
-                            @Calle = '${dir.calle.replace(/'/g, "''")}', 
-                            @Colonia = '${dir.colonia.replace(/'/g, "''")}'
-                    `);
-                }
-            }
-        }
+        
+        // Construir la consulta con parámetros
+        let query = `
+            EXEC ActualizarClienteConDirecciones 
+                @id = ${id},
+                @nombre = '${nombre.replace(/'/g, "''")}',
+                @telefono = '${(telefono || '').replace(/'/g, "''")}',
+                @numeroCliente = '${numeroCliente.replace(/'/g, "''")}',
+                @email = '${(email || '').replace(/'/g, "''")}',
+                @direcciones = ${direccionesXML ? `'${direccionesXML.replace(/'/g, "''")}'` : 'NULL'}
+        `;
+        
+        await connection.query(query);
 
         res.json({ message: 'Cliente actualizado' });
     } catch (err) {
@@ -262,7 +266,7 @@ app.put('/api/clientes/:id', async (req, res) => {
     }
 });
 
-// Eliminar cliente usando Stored Procedure
+// Eliminar cliente
 app.delete('/api/clientes/:id', async (req, res) => {
     let connection;
     try {
@@ -272,7 +276,7 @@ app.delete('/api/clientes/:id', async (req, res) => {
         }
 
         connection = await odbc.connect(connectionString);
-        await connection.query(`EXEC EliminarCliente @ID = ${id}`);
+        await connection.query(`EXEC EliminarCliente @id = ${id}`);
         
         res.json({ message: 'Cliente eliminado' });
     } catch (err) {

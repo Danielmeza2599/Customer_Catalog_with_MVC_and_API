@@ -2,7 +2,7 @@
 // test_connection.js - PRUEBA ESTAS OPCIONES
 const sql = require('mssql');
 
-// Prueba estas configuraciones UNA POR UNA:
+// Probar estas configuraciones UNA POR UNA:
 const configOptions = [
     {
         server: 'localhost\\SQLEXPRESS',
