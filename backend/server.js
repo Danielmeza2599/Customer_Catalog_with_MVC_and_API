@@ -3,7 +3,7 @@
 // Autor: Daniel Meza
 // Fecha: 25/08/2025
 
-// server.js - VERSIÓN V2.0
+// server.js - VERSIÓN V2.1 CON STORED PROCEDURES
 const express = require('express');
 const odbc = require('odbc');
 const bodyParser = require('body-parser');
@@ -35,28 +35,22 @@ app.get('/', (req, res) => {
 // Cadena de conexión ODBC
 const connectionString = 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=MEZADESKTOP\\SQLEXPRESS;DATABASE=ClientesDB;UID=sa;PWD=mezasql;TrustServerCertificate=yes;';
 
-// Obtener todos los clientes - CORREGIDO
+// 
+ // API Clientes
+//
+// Obtener todos los clientes usando Stored Procedure
 app.get('/api/clientes', async (req, res) => {
     let connection;
     try {
         connection = await odbc.connect(connectionString);
-        const result = await connection.query(`
-            SELECT 
-                c.ID, c.Nombre, c.Telefono, c.NumeroCliente, c.Email,
-                (SELECT d.ID, d.Calle, d.Colonia 
-                 FROM Direcciones d 
-                 WHERE d.ClienteID = c.ID 
-                 FOR JSON PATH) as Direcciones
-            FROM Clientes c
-        `);
-
+        const result = await connection.query(`EXEC ObtenerClientesConDirecciones`);
+        
         // Parsear correctamente las direcciones
         const clientes = result.map(row => {
             let direcciones = [];
             try {
                 if (row.Direcciones) {
                     direcciones = JSON.parse(row.Direcciones);
-                    // Asegurarse de que es un array
                     if (!Array.isArray(direcciones)) {
                         direcciones = [direcciones];
                     }
@@ -91,7 +85,10 @@ app.get('/api/clientes', async (req, res) => {
     }
 });
 
-// Obtener un cliente por ID - CORREGIDO
+//
+// API Clientes por ID
+//
+// Obtener un cliente por ID usando Stored Procedure
 app.get('/api/clientes/:id', async (req, res) => {
     let connection;
     try {
@@ -101,16 +98,7 @@ app.get('/api/clientes/:id', async (req, res) => {
         }
 
         connection = await odbc.connect(connectionString);
-        const result = await connection.query(`
-            SELECT 
-                c.ID, c.Nombre, c.Telefono, c.NumeroCliente, c.Email,
-                (SELECT d.ID, d.Calle, d.Colonia 
-                 FROM Direcciones d 
-                 WHERE d.ClienteID = c.ID 
-                 FOR JSON PATH) as Direcciones
-            FROM Clientes c
-            WHERE c.ID = ${id}
-        `);
+        const result = await connection.query(`EXEC ObtenerClientePorID @ID = ${id}`);
 
         if (result.length === 0) {
             return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -154,7 +142,10 @@ app.get('/api/clientes/:id', async (req, res) => {
     }
 });
 
-// Crear cliente - MEJORADO (protección básica contra SQL injection)
+//
+// API Crear, Actualizar y Eliminar Clientes
+//
+// Crear cliente usando Stored Procedures
 app.post('/api/clientes', async (req, res) => {
     let connection;
     try {
@@ -167,23 +158,30 @@ app.post('/api/clientes', async (req, res) => {
 
         connection = await odbc.connect(connectionString);
 
-        // Insertar cliente con parámetros seguros
+        // Insertar cliente usando Stored Procedure
         const clienteResult = await connection.query(`
-            INSERT INTO Clientes (Nombre, Telefono, NumeroCliente, Email)
-            OUTPUT INSERTED.ID
-            VALUES (?, ?, ?, ?)
-        `, [nombre, telefono || '', numeroCliente, email || '']);
+            DECLARE @NewID INT;
+            EXEC CrearClienteConDirecciones
+                @Nombre = '${nombre.replace(/'/g, "''")}', 
+                @Telefono = '${telefono || ''}', 
+                @NumeroCliente = '${numeroCliente.replace(/'/g, "''")}', 
+                @Email = '${email || ''}', 
+                @NewID = @NewID OUTPUT;
+            SELECT @NewID as ID;
+        `);
 
         const clienteId = clienteResult[0].ID;
 
-        // Insertar direcciones si existen
+        // Insertar direcciones usando Stored Procedure
         if (direcciones && direcciones.length > 0) {
             for (const dir of direcciones) {
                 if (dir.calle && dir.colonia) {
                     await connection.query(`
-                        INSERT INTO Direcciones (ClienteID, Calle, Colonia)
-                        VALUES (?, ?, ?)
-                    `, [clienteId, dir.calle, dir.colonia]);
+                        EXEC sp_InsertDireccion 
+                            @ClienteID = ${clienteId}, 
+                            @Calle = '${dir.calle.replace(/'/g, "''")}', 
+                            @Colonia = '${dir.colonia.replace(/'/g, "''")}'
+                    `);
                 }
             }
         }
@@ -203,7 +201,9 @@ app.post('/api/clientes', async (req, res) => {
     }
 });
 
-// Actualizar cliente - MEJORADO
+
+
+// Actualizar cliente usando Stored Procedures
 app.put('/api/clientes/:id', async (req, res) => {
     let connection;
     try {
@@ -220,23 +220,29 @@ app.put('/api/clientes/:id', async (req, res) => {
 
         connection = await odbc.connect(connectionString);
 
-        // Actualizar cliente
+        // Actualizar cliente usando Stored Procedure
         await connection.query(`
-            UPDATE Clientes 
-            SET Nombre = ?, Telefono = ?, NumeroCliente = ?, Email = ?
-            WHERE ID = ?
-        `, [nombre, telefono || '', numeroCliente, email || '', id]);
+            EXEC ActualizarClienteConDirecciones
+                @ID = ${id},
+                @Nombre = '${nombre.replace(/'/g, "''")}',
+                @Telefono = '${telefono || ''}',
+                @NumeroCliente = '${numeroCliente.replace(/'/g, "''")}',
+                @Email = '${email || ''}'
+        `);
 
-        // Eliminar y recrear direcciones
-        await connection.query(`DELETE FROM Direcciones WHERE ClienteID = ?`, [id]);
+        // Eliminar direcciones existentes
+        await connection.query(`DELETE FROM Direcciones WHERE ClienteID = ${id}`);
 
+        // Insertar nuevas direcciones
         if (direcciones && direcciones.length > 0) {
             for (const dir of direcciones) {
                 if (dir.calle && dir.colonia) {
                     await connection.query(`
-                        INSERT INTO Direcciones (ClienteID, Calle, Colonia)
-                        VALUES (?, ?, ?)
-                    `, [id, dir.calle, dir.colonia]);
+                        EXEC sp_InsertDireccion 
+                            @ClienteID = ${id}, 
+                            @Calle = '${dir.calle.replace(/'/g, "''")}', 
+                            @Colonia = '${dir.colonia.replace(/'/g, "''")}'
+                    `);
                 }
             }
         }
@@ -256,7 +262,7 @@ app.put('/api/clientes/:id', async (req, res) => {
     }
 });
 
-// Eliminar cliente - MEJORADO
+// Eliminar cliente usando Stored Procedure
 app.delete('/api/clientes/:id', async (req, res) => {
     let connection;
     try {
@@ -266,7 +272,7 @@ app.delete('/api/clientes/:id', async (req, res) => {
         }
 
         connection = await odbc.connect(connectionString);
-        await connection.query(`DELETE FROM Clientes WHERE ID = ?`, [id]);
+        await connection.query(`EXEC EliminarCliente @ID = ${id}`);
         
         res.json({ message: 'Cliente eliminado' });
     } catch (err) {
